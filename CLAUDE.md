@@ -12,7 +12,7 @@ Zie ARCHITECTUUR.md voor ontwerpbeslissingen.
 ## Commands
 
 ```bash
-npm run build          # TypeScript compilatie
+npm run build          # TypeScript compilatie + kopieert SQL migrations naar dist/
 npm test               # Vitest — alle tests
 npm run test:watch     # Vitest in watch mode
 npx vitest run test/database.test.ts  # Enkele test file
@@ -26,7 +26,7 @@ npm run typecheck      # tsc --noEmit
 npm run brain -- search "query"  # CLI tool
 ```
 
-Docker: `docker compose -f docker/docker-compose.yml up -d`
+Docker: `docker compose up -d` (lokaal) of `docker compose -f docker/docker-compose.yml up -d` (VPS met Caddy)
 
 ## Architecture
 

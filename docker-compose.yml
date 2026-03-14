@@ -1,0 +1,13 @@
+services:
+  open-brain:
+    build: .
+    container_name: open-brain
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_PATH=/data/brain.db
+      - AUTH_TOKEN=${AUTH_TOKEN:-local-dev-token}
+    volumes:
+      - ./data:/data
+    ports:
+      - "3000:3000"

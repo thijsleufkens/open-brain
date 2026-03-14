@@ -15,8 +15,11 @@ COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
 
-# Prune dev dependencies
-RUN npm prune --production
+# Prune dev dependencies, then install platform-specific sqlite-vec binary
+# (lockfile generated on macOS won't include linux optional deps)
+RUN npm prune --production && \
+    npm install --no-save sqlite-vec-linux-arm64 2>/dev/null || \
+    npm install --no-save sqlite-vec-linux-x64 2>/dev/null || true
 
 # === Stage 2: Runtime ===
 FROM node:22-slim AS runtime
@@ -31,6 +34,10 @@ RUN groupadd --gid 1001 openbrain && \
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
+
+# Copy SQL migration files (not included in tsc output)
+COPY --from=builder /app/src/db/migrations ./dist/db/migrations
+
 
 # Create data directory with correct ownership
 RUN mkdir -p /data && chown openbrain:openbrain /data

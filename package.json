@@ -10,7 +10,7 @@
     "brain": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/db/migrations dist/db/migrations",
     "dev": "node --env-file=.env --import=tsx src/mcp-http.ts",
     "dev:stdio": "node --env-file=.env --import=tsx src/mcp-stdio.ts",
     "start": "node --env-file=.env dist/mcp-http.js",
