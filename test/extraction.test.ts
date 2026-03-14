@@ -8,6 +8,7 @@ import { MetadataRepository } from "../src/repositories/metadata.repository.js";
 import { ExtractionService } from "../src/services/extraction.service.js";
 import { ExtractionWorker } from "../src/services/extraction.worker.js";
 import { extractionResultSchema } from "../src/types/extraction.js";
+import { getDutchDayName, buildExtractionPrompt } from "../src/providers/gemini-extraction.js";
 import pino from "pino";
 
 const logger = pino({ level: "silent" });
@@ -32,6 +33,37 @@ function createMockProvider(overrides?: Partial<ReturnType<typeof extractionResu
     }),
   };
 }
+
+describe("buildExtractionPrompt", () => {
+  it("contains today's date in ISO format", () => {
+    const prompt = buildExtractionPrompt();
+    const today = new Date().toISOString().slice(0, 10);
+    expect(prompt).toContain(today);
+  });
+
+  it("contains the Dutch day name", () => {
+    const prompt = buildExtractionPrompt();
+    const dayName = getDutchDayName(new Date());
+    expect(prompt).toContain(dayName);
+  });
+
+  it("instructs to resolve relative dates", () => {
+    const prompt = buildExtractionPrompt();
+    expect(prompt).toContain("relatieve datums");
+    expect(prompt).toContain("ALWAYS resolve relative dates");
+  });
+});
+
+describe("getDutchDayName", () => {
+  it("returns correct Dutch day names", () => {
+    // 2026-03-16 is a Monday
+    expect(getDutchDayName(new Date("2026-03-16"))).toBe("maandag");
+    // 2026-03-14 is a Saturday
+    expect(getDutchDayName(new Date("2026-03-14"))).toBe("zaterdag");
+    // 2026-03-15 is a Sunday
+    expect(getDutchDayName(new Date("2026-03-15"))).toBe("zondag");
+  });
+});
 
 describe("extractionResultSchema", () => {
   it("validates a correct extraction result", () => {

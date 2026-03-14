@@ -11,12 +11,28 @@ import { extractionResultSchema, type ExtractionResult } from "../types/extracti
 import { AppError } from "../types/errors.js";
 import type { Logger } from "../utils/logger.js";
 
-const EXTRACTION_PROMPT = `You are a metadata extraction assistant. Analyze the following thought/note and extract structured metadata.
+const DUTCH_DAY_NAMES = [
+  "zondag", "maandag", "dinsdag", "woensdag",
+  "donderdag", "vrijdag", "zaterdag",
+] as const;
+
+function getDutchDayName(date: Date): string {
+  return DUTCH_DAY_NAMES[date.getDay()];
+}
+
+function buildExtractionPrompt(): string {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const dayName = getDutchDayName(now);
+
+  return `You are a metadata extraction assistant. Analyze the following thought/note and extract structured metadata.
+
+Vandaag is ${today} (${dayName}). Gebruik dit om relatieve datums als "maandag", "volgende week", "over 3 dagen", "morgen" naar absolute ISO datums (YYYY-MM-DD) te vertalen.
 
 Rules:
 - topics: 1-5 short lowercase topic labels (e.g. "infrastructure", "ai", "hiring")
 - people: Full names of people explicitly mentioned. Do NOT infer people not named.
-- action_items: Concrete tasks or commitments. Include due_date as ISO date (YYYY-MM-DD) if mentioned, otherwise null.
+- action_items: Concrete tasks or commitments. Include due_date as ISO date (YYYY-MM-DD) if mentioned, otherwise null. ALWAYS resolve relative dates to absolute dates using today's date above.
 - dates_referenced: Any specific dates mentioned with brief context.
 - note_type: Classify as one of: idea, meeting, decision, task, reference, journal, other
 
@@ -31,6 +47,10 @@ Respond with ONLY valid JSON matching this exact schema:
 
 Thought to analyze:
 `;
+}
+
+// Export for testing
+export { getDutchDayName, buildExtractionPrompt };
 
 interface GeminiGenerateResponse {
   candidates?: Array<{
@@ -55,7 +75,7 @@ export class GeminiExtractionProvider {
     const body = {
       contents: [
         {
-          parts: [{ text: EXTRACTION_PROMPT + content }],
+          parts: [{ text: buildExtractionPrompt() + content }],
         },
       ],
       generationConfig: {

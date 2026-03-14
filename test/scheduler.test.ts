@@ -40,23 +40,18 @@ function createMockThoughtRepo() {
   } as never;
 }
 
+function okResult(value: unknown) {
+  return { isOk: () => true, isErr: () => false, value };
+}
+
 function createMockMetadataRepo() {
   return {
-    listActions: vi.fn().mockReturnValue({
-      isOk: () => true,
-      isErr: () => false,
-      value: [],
-    }),
-    listTopics: vi.fn().mockReturnValue({
-      isOk: () => true,
-      isErr: () => false,
-      value: [],
-    }),
-    findThoughtIdsByTopic: vi.fn().mockReturnValue({
-      isOk: () => true,
-      isErr: () => false,
-      value: [],
-    }),
+    listActions: vi.fn().mockReturnValue(okResult([])),
+    listTopics: vi.fn().mockReturnValue(okResult([])),
+    findThoughtIdsByTopic: vi.fn().mockReturnValue(okResult([])),
+    findActionsDueOn: vi.fn().mockReturnValue(okResult([])),
+    findOverdueActions: vi.fn().mockReturnValue(okResult([])),
+    findActionsDueInRange: vi.fn().mockReturnValue(okResult([])),
   } as never;
 }
 
@@ -96,15 +91,12 @@ describe("SchedulerService", () => {
     const bot = createMockBot();
     const metadataRepo = createMockMetadataRepo();
 
-    // Mock overdue action items
-    vi.mocked(metadataRepo.listActions).mockReturnValue({
-      isOk: () => true,
-      isErr: () => false,
-      value: [
+    // Mock overdue actions via findOverdueActions
+    vi.mocked(metadataRepo.findOverdueActions).mockReturnValue(
+      okResult([
         { actionText: "Stuur offerte naar klant", dueDate: "2026-03-10", completed: false },
-        { actionText: "Review code", dueDate: "2026-03-20", completed: false },
-      ],
-    } as never);
+      ]) as never
+    );
 
     // Set time to 8am on a Tuesday
     vi.setSystemTime(new Date("2026-03-17T08:00:00"));
@@ -118,13 +110,76 @@ describe("SchedulerService", () => {
     );
 
     scheduler.start();
-
-    // Allow async tick to complete
     await vi.advanceTimersByTimeAsync(100);
 
     expect(bot.api.sendMessage).toHaveBeenCalledWith(
       123456,
       expect.stringContaining("Verlopen actiepunten"),
+      expect.objectContaining({ parse_mode: "Markdown" })
+    );
+  });
+
+  it("sends 'vandaag te doen' section for today's actions", async () => {
+    const bot = createMockBot();
+    const metadataRepo = createMockMetadataRepo();
+
+    vi.mocked(metadataRepo.findActionsDueOn).mockReturnValue(
+      okResult([
+        { actionText: "KvK betalen", dueDate: "2026-03-17", completed: false },
+      ]) as never
+    );
+
+    vi.setSystemTime(new Date("2026-03-17T08:00:00"));
+
+    scheduler = new SchedulerService(
+      bot,
+      { userId: 123456, morningHour: 8 },
+      createMockThoughtRepo(),
+      metadataRepo,
+      mockLogger as never
+    );
+
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+      123456,
+      expect.stringContaining("Vandaag te doen"),
+      expect.objectContaining({ parse_mode: "Markdown" })
+    );
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+      123456,
+      expect.stringContaining("KvK betalen"),
+      expect.objectContaining({ parse_mode: "Markdown" })
+    );
+  });
+
+  it("shows 'binnenkort deadline' for upcoming actions", async () => {
+    const bot = createMockBot();
+    const metadataRepo = createMockMetadataRepo();
+
+    vi.mocked(metadataRepo.findActionsDueInRange).mockReturnValue(
+      okResult([
+        { actionText: "Factuur versturen", dueDate: "2026-03-19", completed: false },
+      ]) as never
+    );
+
+    vi.setSystemTime(new Date("2026-03-17T08:00:00"));
+
+    scheduler = new SchedulerService(
+      bot,
+      { userId: 123456, morningHour: 8 },
+      createMockThoughtRepo(),
+      metadataRepo,
+      mockLogger as never
+    );
+
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+      123456,
+      expect.stringContaining("Binnenkort deadline"),
       expect.objectContaining({ parse_mode: "Markdown" })
     );
   });

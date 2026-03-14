@@ -221,6 +221,89 @@ describe("MetadataRepository", () => {
     }
   });
 
+  it("finds actions due on a specific date", () => {
+    const t = thoughtRepo.insert("Reminders test", "mcp", "task", "test", 4);
+    if (!t.isOk()) return;
+
+    metaRepo.insertActions(t.value.id, [
+      { text: "Pay KvK", dueDate: "2026-03-15" },
+      { text: "Call dentist", dueDate: "2026-03-16" },
+      { text: "No deadline" },
+    ]);
+
+    const result = metaRepo.findActionsDueOn("2026-03-15");
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.length).toBe(1);
+      expect(result.value[0].actionText).toBe("Pay KvK");
+    }
+  });
+
+  it("finds overdue actions", () => {
+    const t = thoughtRepo.insert("Overdue test", "mcp", "task", "test", 4);
+    if (!t.isOk()) return;
+
+    metaRepo.insertActions(t.value.id, [
+      { text: "Past due", dueDate: "2026-03-10" },
+      { text: "Due today", dueDate: "2026-03-15" },
+      { text: "Future", dueDate: "2026-03-20" },
+    ]);
+
+    const result = metaRepo.findOverdueActions("2026-03-15");
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.length).toBe(1);
+      expect(result.value[0].actionText).toBe("Past due");
+    }
+  });
+
+  it("finds actions due in a date range", () => {
+    const t = thoughtRepo.insert("Range test", "mcp", "task", "test", 4);
+    if (!t.isOk()) return;
+
+    metaRepo.insertActions(t.value.id, [
+      { text: "Before range", dueDate: "2026-03-14" },
+      { text: "In range 1", dueDate: "2026-03-16" },
+      { text: "In range 2", dueDate: "2026-03-18" },
+      { text: "After range", dueDate: "2026-03-20" },
+    ]);
+
+    const result = metaRepo.findActionsDueInRange("2026-03-16", "2026-03-18");
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.length).toBe(2);
+      const texts = result.value.map((a) => a.actionText);
+      expect(texts).toContain("In range 1");
+      expect(texts).toContain("In range 2");
+    }
+  });
+
+  it("excludes completed actions from date queries", () => {
+    const t = thoughtRepo.insert("Completed test", "mcp", "task", "test", 4);
+    if (!t.isOk()) return;
+
+    metaRepo.insertActions(t.value.id, [
+      { text: "Open action", dueDate: "2026-03-15" },
+      { text: "Done action", dueDate: "2026-03-15" },
+    ]);
+
+    // Mark second action as completed
+    const actions = metaRepo.listActions("open", 10);
+    if (actions.isOk()) {
+      const doneAction = actions.value.find((a) => a.actionText === "Done action");
+      if (doneAction) {
+        db.prepare("UPDATE actions SET completed = 1 WHERE id = ?").run(doneAction.id);
+      }
+    }
+
+    const result = metaRepo.findActionsDueOn("2026-03-15");
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.length).toBe(1);
+      expect(result.value[0].actionText).toBe("Open action");
+    }
+  });
+
   it("finds thoughts by topic", () => {
     const t1 = thoughtRepo.insert("AI thought", "mcp", "idea", "test", 4);
     const t2 = thoughtRepo.insert("Cooking thought", "mcp", "idea", "test", 4);

@@ -30,6 +30,9 @@ export class MetadataRepository {
   private readonly findTopicsByThoughtStmt;
   private readonly findPeopleByThoughtStmt;
   private readonly findActionsByThoughtStmt;
+  private readonly findActionsDueOnStmt;
+  private readonly findOverdueActionsStmt;
+  private readonly findActionsDueInRangeStmt;
 
   constructor(private readonly db: Database.Database) {
     this.insertTopicStmt = db.prepare(
@@ -49,6 +52,24 @@ export class MetadataRepository {
     );
     this.findActionsByThoughtStmt = db.prepare(
       "SELECT * FROM actions WHERE thought_id = ?"
+    );
+    this.findActionsDueOnStmt = db.prepare(
+      `SELECT a.id, a.thought_id, a.action_text, a.due_date, a.completed, a.created_at
+       FROM actions a
+       WHERE a.completed = 0 AND a.due_date = ?
+       ORDER BY a.created_at ASC`
+    );
+    this.findOverdueActionsStmt = db.prepare(
+      `SELECT a.id, a.thought_id, a.action_text, a.due_date, a.completed, a.created_at
+       FROM actions a
+       WHERE a.completed = 0 AND a.due_date IS NOT NULL AND a.due_date < ?
+       ORDER BY a.due_date ASC`
+    );
+    this.findActionsDueInRangeStmt = db.prepare(
+      `SELECT a.id, a.thought_id, a.action_text, a.due_date, a.completed, a.created_at
+       FROM actions a
+       WHERE a.completed = 0 AND a.due_date >= ? AND a.due_date <= ?
+       ORDER BY a.due_date ASC`
     );
   }
 
@@ -201,6 +222,75 @@ export class MetadataRepository {
       return err(
         new DatabaseError("Failed to find thoughts by person", error)
       );
+    }
+  }
+
+  findActionsDueOn(date: string): Result<ActionItem[], DatabaseError> {
+    try {
+      const rows = this.findActionsDueOnStmt.all(date) as {
+        id: number;
+        thought_id: string;
+        action_text: string;
+        due_date: string | null;
+        completed: number;
+        created_at: string;
+      }[];
+      return ok(rows.map((r) => ({
+        id: r.id,
+        thoughtId: r.thought_id,
+        actionText: r.action_text,
+        dueDate: r.due_date,
+        completed: r.completed === 1,
+        createdAt: r.created_at,
+      })));
+    } catch (error) {
+      return err(new DatabaseError("Failed to find actions due on date", error));
+    }
+  }
+
+  findOverdueActions(beforeDate: string): Result<ActionItem[], DatabaseError> {
+    try {
+      const rows = this.findOverdueActionsStmt.all(beforeDate) as {
+        id: number;
+        thought_id: string;
+        action_text: string;
+        due_date: string | null;
+        completed: number;
+        created_at: string;
+      }[];
+      return ok(rows.map((r) => ({
+        id: r.id,
+        thoughtId: r.thought_id,
+        actionText: r.action_text,
+        dueDate: r.due_date,
+        completed: r.completed === 1,
+        createdAt: r.created_at,
+      })));
+    } catch (error) {
+      return err(new DatabaseError("Failed to find overdue actions", error));
+    }
+  }
+
+  findActionsDueInRange(from: string, to: string): Result<ActionItem[], DatabaseError> {
+    try {
+      const rows = this.findActionsDueInRangeStmt.all(from, to) as {
+        id: number;
+        thought_id: string;
+        action_text: string;
+        due_date: string | null;
+        completed: number;
+        created_at: string;
+      }[];
+      return ok(rows.map((r) => ({
+        id: r.id,
+        thoughtId: r.thought_id,
+        actionText: r.action_text,
+        dueDate: r.due_date,
+        completed: r.completed === 1,
+        createdAt: r.created_at,
+      })));
+    } catch (error) {
+      return err(new DatabaseError("Failed to find actions due in range", error));
     }
   }
 

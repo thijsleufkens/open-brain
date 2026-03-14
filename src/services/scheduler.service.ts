@@ -84,40 +84,46 @@ export class SchedulerService {
     try {
       const parts: string[] = [];
 
-      // Open action items
-      const actionsResult = this.metadataRepo.listActions("open", 10);
-      if (actionsResult.isOk() && actionsResult.value.length > 0) {
-        const actions = actionsResult.value;
-        const overdue = actions.filter(
-          (a) => a.dueDate && a.dueDate < today
+      // 1. Actions due today — most prominent
+      const todayResult = this.metadataRepo.findActionsDueOn(today);
+      if (todayResult.isOk() && todayResult.value.length > 0) {
+        parts.push(
+          "🔔 *Vandaag te doen:*\n" +
+            todayResult.value
+              .map((a) => `• ${a.actionText}`)
+              .join("\n")
         );
-        const dueSoon = actions.filter(
-          (a) =>
-            a.dueDate &&
-            a.dueDate >= today &&
-            a.dueDate <= this.addDays(today, 3)
+      }
+
+      // 2. Overdue actions
+      const overdueResult = this.metadataRepo.findOverdueActions(today);
+      if (overdueResult.isOk() && overdueResult.value.length > 0) {
+        parts.push(
+          "⚠️ *Verlopen actiepunten:*\n" +
+            overdueResult.value
+              .map((a) => `• ${a.actionText} (deadline: ${a.dueDate})`)
+              .join("\n")
         );
+      }
 
-        if (overdue.length > 0) {
-          parts.push(
-            "⚠️ *Verlopen actiepunten:*\n" +
-              overdue
-                .map((a) => `• ${a.actionText} (deadline: ${a.dueDate})`)
-                .join("\n")
-          );
-        }
+      // 3. Due soon (tomorrow to +3 days)
+      const tomorrow = this.addDays(today, 1);
+      const threeDaysOut = this.addDays(today, 3);
+      const soonResult = this.metadataRepo.findActionsDueInRange(tomorrow, threeDaysOut);
+      if (soonResult.isOk() && soonResult.value.length > 0) {
+        parts.push(
+          "📅 *Binnenkort deadline:*\n" +
+            soonResult.value
+              .map((a) => `• ${a.actionText} (deadline: ${a.dueDate})`)
+              .join("\n")
+        );
+      }
 
-        if (dueSoon.length > 0) {
-          parts.push(
-            "📅 *Binnenkort deadline:*\n" +
-              dueSoon
-                .map((a) => `• ${a.actionText} (deadline: ${a.dueDate})`)
-                .join("\n")
-          );
-        }
-
-        if (overdue.length === 0 && dueSoon.length === 0) {
-          parts.push(`✅ ${actions.length} open actiepunten, geen deadlines binnenkort`);
+      // Fallback: show open action count if no date-based sections
+      if (parts.length === 0) {
+        const allOpen = this.metadataRepo.listActions("open", 100);
+        if (allOpen.isOk() && allOpen.value.length > 0) {
+          parts.push(`✅ ${allOpen.value.length} open actiepunten, geen deadlines binnenkort`);
         }
       }
 
