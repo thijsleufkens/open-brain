@@ -23,6 +23,7 @@ npm run start:stdio    # Productie MCP server
 npm run start          # Productie HTTP server
 
 npm run typecheck      # tsc --noEmit
+npm run lint           # ESLint
 npm run brain -- search "query"  # CLI tool
 ```
 
@@ -54,7 +55,7 @@ SchedulerService ──────────────→ Telegram (proacti
 - **`src/services/`** — ThoughtService (capture + dedup), SearchService (hybrid RRF), ExtractionService + Worker, SchedulerService.
 - **`src/telegram/`** — grammy bot met handlers voor text, voice, photo, commands. Alles in `handlers.ts`.
 - **`src/mcp/`** — MCP server met 8 tools (search, capture, list, stats, topics, actions, delete, update).
-- **Entry points:** `mcp-stdio.ts` (Claude Code), `mcp-http.ts` (HTTP + auth), `cli/index.ts`.
+- **Entry points:** `mcp-stdio.ts` (stdio transport), `mcp-http.ts` (HTTP + auth + Telegram, used by Docker). Claude Code connects via HTTP (see `.mcp.json`), `cli/index.ts`.
 
 ### Search: hybrid vector + keyword
 
@@ -73,9 +74,17 @@ L2 distance < 0.10 op genormaliseerde vectoren (~cosine similarity > 0.95) blokk
 - **Repository pattern** — alle SQL in repository classes in `src/repositories/`
 - **Gemini providers** — alle API calls in `src/providers/`, nooit elders
 
+### Extraction prompt
+
+`GeminiExtractionProvider` injecteert dynamisch de huidige datum + Nederlandse dagnaam in de prompt zodat Gemini relatieve datums ("maandag", "morgen") naar ISO datums vertaalt.
+
+### Scheduler
+
+Dagelijks overzicht in prioriteitsvolgorde: 🔔 Vandaag te doen → ⚠️ Verlopen → 📅 Binnenkort deadline. Gebruikt `findActionsDueOn()`, `findOverdueActions()`, `findActionsDueInRange()` (niet `listActions` + JS-filtering).
+
 ## Database
 
-- SQLite met WAL mode, foreign keys aan, busy_timeout 5s
+- SQLite met WAL mode, `synchronous = FULL`, foreign keys aan, busy_timeout 5s
 - sqlite-vec voor 768-dim vector search (brute-force k-NN)
 - FTS5 voor keyword search
 - Migraties als genummerde `.sql` bestanden in `src/db/migrations/`
@@ -96,3 +105,7 @@ Gevalideerd bij startup via Zod (`src/config.ts`):
 - `TELEGRAM_ALLOWED_USERS` (comma-separated Telegram user IDs)
 - `DB_PATH` (default: `./data/brain.db`)
 - `EXTRACTION_MODEL` (default: `gemini-2.5-flash`)
+
+## Deployment
+
+Lokaal draait Docker met bind mount `./data:/data` (database op Dropbox). Na `docker compose up -d --build` moet Claude Code herstart worden (nieuwe MCP sessie nodig — stale session IDs worden niet automatisch hersteld door de MCP client).

@@ -50,6 +50,7 @@ export class ThoughtRepository {
   private readonly markExtractedStmt;
   private readonly deleteStmt;
   private readonly updateContentStmt;
+  private readonly updateNoteTypeStmt;
 
   constructor(private readonly db: Database.Database) {
     this.insertStmt = db.prepare(`
@@ -90,6 +91,10 @@ export class ThoughtRepository {
 
     this.updateContentStmt = db.prepare(
       "UPDATE thoughts SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? RETURNING *"
+    );
+
+    this.updateNoteTypeStmt = db.prepare(
+      "UPDATE thoughts SET note_type = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?"
     );
   }
 
@@ -208,6 +213,15 @@ export class ThoughtRepository {
       return ok(row ? rowToThought(row) : null);
     } catch (error) {
       return err(new DatabaseError("Failed to update thought", error));
+    }
+  }
+
+  updateNoteType(id: string, noteType: string): Result<void, DatabaseError> {
+    try {
+      this.updateNoteTypeStmt.run(noteType, id);
+      return ok(undefined);
+    } catch (error) {
+      return err(new DatabaseError("Failed to update note_type", error));
     }
   }
 

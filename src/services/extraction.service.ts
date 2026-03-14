@@ -54,10 +54,15 @@ export class ExtractionService {
       // Update note_type if the LLM classified it differently and it was default
       // (only override if the original was "idea" — the default)
       if (thought.noteType === "idea" && result.note_type !== "idea") {
-        this.logger.debug(
-          { thoughtId: thought.id, from: thought.noteType, to: result.note_type },
-          "Updating note_type based on extraction"
-        );
+        const noteTypeResult = this.thoughtRepo.updateNoteType(thought.id, result.note_type);
+        if (noteTypeResult.isErr()) {
+          this.logger.error({ thoughtId: thought.id, error: noteTypeResult.error }, "Failed to update note_type");
+        } else {
+          this.logger.info(
+            { thoughtId: thought.id, from: thought.noteType, to: result.note_type },
+            "Updated note_type based on extraction"
+          );
+        }
       }
 
       // Mark as extracted with raw JSON
