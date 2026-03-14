@@ -41,7 +41,7 @@ export function openDatabase(options: DatabaseOptions): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");
-  db.pragma("synchronous = NORMAL");
+  db.pragma("synchronous = FULL");
 
   // Load sqlite-vec extension
   sqliteVec.load(db);

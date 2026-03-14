@@ -227,8 +227,11 @@ async function main() {
           if (sessionId && transports.has(sessionId)) {
             // Existing session
             transport = transports.get(sessionId)!;
-          } else if (!sessionId) {
-            // New session — create transport + connect server
+          } else if (!sessionId || (body && typeof body === "object" && !Array.isArray(body) && (body as Record<string, unknown>).method === "initialize")) {
+            // New session — no session ID, or unknown session ID with initialize request
+            if (sessionId) {
+              logger.warn({ sessionId }, "Unknown session ID, accepting re-initialization");
+            }
             transport = createMcpTransport();
             const mcpServer = createMcpServer({
               thoughtService,
@@ -239,13 +242,16 @@ async function main() {
             });
             await mcpServer.connect(transport);
           } else {
-            // Invalid session ID
-            res.writeHead(400, { "Content-Type": "application/json" });
+            // Unknown session ID with non-initialize request — client must re-initialize
+            logger.warn({ sessionId }, "Unknown session ID, client must re-initialize");
+            res.writeHead(404, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 jsonrpc: "2.0",
-                error: { code: -32000, message: "Invalid session" },
-                id: null,
+                error: { code: -32000, message: "Session not found. Please re-initialize." },
+                id: (body && typeof body === "object" && !Array.isArray(body))
+                  ? (body as Record<string, unknown>).id ?? null
+                  : null,
               })
             );
             return;
