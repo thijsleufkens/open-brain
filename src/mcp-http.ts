@@ -9,10 +9,13 @@ import { EmbeddingRepository } from "./repositories/embedding.repository.js";
 import { MetadataRepository } from "./repositories/metadata.repository.js";
 import { GeminiEmbeddingProvider } from "./providers/gemini-embedding.js";
 import { GeminiExtractionProvider } from "./providers/gemini-extraction.js";
+import { GeminiTranscriptionProvider } from "./providers/gemini-transcription.js";
+import { GeminiVisionProvider } from "./providers/gemini-vision.js";
 import { ThoughtService } from "./services/thought.service.js";
 import { SearchService } from "./services/search.service.js";
 import { ExtractionService } from "./services/extraction.service.js";
 import { ExtractionWorker } from "./services/extraction.worker.js";
+import { SchedulerService } from "./services/scheduler.service.js";
 import { createMcpServer } from "./mcp/server.js";
 import { createTelegramBot } from "./telegram/bot.js";
 import type { Bot } from "grammy";
@@ -292,8 +295,22 @@ async function main() {
     );
   });
 
+  // --- Media providers ---
+  const transcriptionProvider = new GeminiTranscriptionProvider(
+    config.geminiApiKey,
+    config.extractionModel,
+    logger
+  );
+
+  const visionProvider = new GeminiVisionProvider(
+    config.geminiApiKey,
+    config.extractionModel,
+    logger
+  );
+
   // --- Telegram bot (conditional) ---
   let telegramBot: Bot | undefined;
+  let scheduler: SchedulerService | undefined;
 
   if (config.telegramBotToken) {
     try {
@@ -305,6 +322,8 @@ async function main() {
         thoughtRepo,
         metadataRepo,
         logger,
+        transcriptionProvider,
+        visionProvider,
       });
 
       telegramBot.start({
@@ -315,6 +334,18 @@ async function main() {
           );
         },
       });
+
+      // Start scheduler for proactive output
+      if (config.telegramAllowedUsers.length > 0) {
+        scheduler = new SchedulerService(
+          telegramBot,
+          { userId: config.telegramAllowedUsers[0] },
+          thoughtRepo,
+          metadataRepo,
+          logger
+        );
+        scheduler.start();
+      }
     } catch (error) {
       logger.error(
         { error: error instanceof Error ? error.message : String(error) },
@@ -341,6 +372,10 @@ async function main() {
       }
     }
     transports.clear();
+
+    if (scheduler) {
+      scheduler.stop();
+    }
 
     if (telegramBot) {
       await telegramBot.stop();

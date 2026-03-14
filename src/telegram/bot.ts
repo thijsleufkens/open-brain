@@ -4,6 +4,8 @@ import type { ThoughtService } from "../services/thought.service.js";
 import type { SearchService } from "../services/search.service.js";
 import type { ThoughtRepository } from "../repositories/thought.repository.js";
 import type { MetadataRepository } from "../repositories/metadata.repository.js";
+import type { GeminiTranscriptionProvider } from "../providers/gemini-transcription.js";
+import type { GeminiVisionProvider } from "../providers/gemini-vision.js";
 import { createHandlers } from "./handlers.js";
 
 export interface TelegramBotDeps {
@@ -14,6 +16,8 @@ export interface TelegramBotDeps {
   thoughtRepo: ThoughtRepository;
   metadataRepo: MetadataRepository;
   logger: Logger;
+  transcriptionProvider?: GeminiTranscriptionProvider;
+  visionProvider?: GeminiVisionProvider;
 }
 
 export function createTelegramBot(deps: TelegramBotDeps): Bot {
@@ -56,6 +60,17 @@ export function createTelegramBot(deps: TelegramBotDeps): Bot {
   bot.command("stats", handlers.stats);
   bot.command("topics", handlers.topics);
   bot.command("actions", handlers.actions);
+
+  // Voice messages = transcribe + capture
+  if (deps.transcriptionProvider) {
+    bot.on("message:voice", handlers.voice);
+    bot.on("message:audio", handlers.voice);
+  }
+
+  // Photo messages = OCR + capture
+  if (deps.visionProvider) {
+    bot.on("message:photo", handlers.photo);
+  }
 
   // Any plain text message = capture thought
   bot.on("message:text", handlers.capture);
