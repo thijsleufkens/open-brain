@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/*
+!data/.gitkeep
+backups/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store
+open-brain-han/

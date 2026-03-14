@@ -1,0 +1,32 @@
+[Unit]
+Description=Open Brain — Personal Knowledge System
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/open-brain/docker
+
+# Start
+ExecStart=/usr/bin/docker compose up -d --build --remove-orphans
+# Stop
+ExecStop=/usr/bin/docker compose down
+# Restart containers (used by ExecReload)
+ExecReload=/usr/bin/docker compose restart
+
+# Environment file for secrets
+EnvironmentFile=/opt/open-brain/.env
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/open-brain
+
+[Install]
+WantedBy=multi-user.target

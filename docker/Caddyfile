@@ -1,0 +1,21 @@
+{$DOMAIN:brain.example.com} {
+	# Automatic HTTPS via Let's Encrypt
+	# Caddy handles certificate provisioning + renewal
+
+	# Reverse proxy to Open Brain
+	reverse_proxy open-brain:3000
+
+	# Logging
+	log {
+		output stdout
+		format json
+	}
+
+	# Security headers
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
