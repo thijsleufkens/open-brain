@@ -1,203 +1,98 @@
-# CLAUDE.md — Open Brain
+# CLAUDE.md
 
-Dit is het Open Brain project van Thijs Leufkens (Datawijs).
-Lees ARCHITECTUUR.md voor de volledige context en beslissingen.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
----
+## Project
 
-## Wat dit project is
+Open Brain — persoonlijk AI-geheugen van Thijs Leufkens (Datawijs).
+Input via Telegram (tekst, voice, foto), doorzoekbaar via MCP in Claude Code.
+Één SQLite database, geen externe services behalve Gemini API.
+Zie ARCHITECTUUR.md voor ontwerpbeslissingen.
 
-Een persoonlijk AI-geheugen dat via Telegram gevoed wordt (tekst, voice, foto)
-en via MCP beschikbaar is in Claude Code. Één SQLite database, geen externe
-services behalve Gemini API.
+## Commands
 
----
+```bash
+npm run build          # TypeScript compilatie
+npm test               # Vitest — alle tests
+npm run test:watch     # Vitest in watch mode
+npx vitest run test/database.test.ts  # Enkele test file
 
-## Taal & stijl
+npm run dev:stdio      # Dev MCP server (stdio, met tsx)
+npm run dev            # Dev HTTP server + Telegram bot (met tsx)
+npm run start:stdio    # Productie MCP server
+npm run start          # Productie HTTP server
 
-- **TypeScript strict mode** — altijd
-- **Geen `any`** — gebruik Zod voor runtime validatie op grenzen
-- **Result types** — gebruik `neverthrow` voor verwachte errors,
-  geen vergeten try/catch
-- **Logging** — Pino, structured JSON, altijd `logger.info/warn/error`,
-  nooit `console.log`
-- **Async** — `async/await`, geen callbacks
-- **Imports** — ESM met `.js` extensies
-
----
-
-## Projectstructuur
-
-Houd je aan de structuur in ARCHITECTUUR.md.
-Korte samenvatting:
-
-```
-src/
-  db/           # database laag (connection, migrations, repositories)
-  services/     # business logica (capture, search, metadata, scheduler)
-  mcp/          # MCP server en tools
-  telegram/     # grammy bot en handlers
-  gemini/       # Gemini API clients (embeddings, extractie, transcriptie)
-data/
-  brain.db      # SQLite database — gitignored
-tests/
+npm run typecheck      # tsc --noEmit
+npm run brain -- search "query"  # CLI tool
 ```
 
----
+Docker: `docker compose -f docker/docker-compose.yml up -d`
 
-## Database regels
+## Architecture
 
-- **WAL mode altijd aan** — `PRAGMA journal_mode=WAL`
-- **Foreign keys aan** — `PRAGMA foreign_keys=ON`
-- **Migraties** — elke schema wijziging als genummerd `.sql` bestand
-  in `src/db/migrations/`
-- **Repository pattern** — alle SQL in repository classes,
-  nooit SQL buiten repositories
-- **Nooit raw SQL** buiten de `db/` map
-
----
-
-## Gemini API
-
-- **Embeddings:** `gemini-embedding-001`, `outputDimensionality: 768`
-- **task_type asymmetrie:**
-  - Bij opslaan: `RETRIEVAL_DOCUMENT`
-  - Bij zoeken: `RETRIEVAL_QUERY`
-- **L2 normalisatie verplicht** bij 768 dims (niet bij 3072)
-- **Metadata extractie:** `gemini-2.5-flash`, JSON output mode + Zod validatie
-- **Audio transcriptie:** `gemini-2.5-flash`, native audio input
-- **Foto OCR:** `gemini-2.5-flash`, native vision input
-
-Alle Gemini clients zitten in `src/gemini/`.
-Nooit direct Gemini API aanroepen buiten deze map.
-
----
-
-## Capture pipeline
-
-Twee-fase model — dit is belangrijk:
+### Two-phase capture pipeline
 
 ```
-Fase A (synchroon, ~200ms):
-  validate → embed → store → return success
-
-Fase B (asynchroon, achtergrond):
-  Gemini Flash → metadata extractie → update record
+Fase A (synchroon, ~200ms): validate → embed → dedup check → store
+Fase B (asynchroon, elke 15s): ExtractionWorker → Gemini Flash → metadata
 ```
 
-Fase A moet altijd snel zijn. Fase B mag falen en later herhaald worden.
-Nooit Fase A blokkeren op Fase B.
+Fase A mag nooit blokkeren op Fase B. Fase B mag falen en wordt herhaald.
 
----
+### Data flow
 
-## MCP Server
+```
+Telegram (text/voice/photo) ──→ ThoughtService.capture() ──→ SQLite
+MCP tools ─────────────────────→ SearchService.search()  ──→ vector + FTS5 + RRF
+SchedulerService ──────────────→ Telegram (proactieve berichten)
+```
 
-- **Transport:** stdio (voor Claude Code lokaal)
-- **Tools:** zie ARCHITECTUUR.md voor volledige lijst
-- **Validatie:** Zod schema op elke tool input
-- **Errors:** nooit raw errors teruggeven, altijd mensleesbaar bericht
+### Key layers
 
----
+- **`src/providers/`** — Gemini API clients (embedding, extraction, transcription, vision). Alle Gemini calls zitten hier, nergens anders.
+- **`src/repositories/`** — ThoughtRepository, EmbeddingRepository, MetadataRepository. Alle SQL zit hier, nergens anders.
+- **`src/services/`** — ThoughtService (capture + dedup), SearchService (hybrid RRF), ExtractionService + Worker, SchedulerService.
+- **`src/telegram/`** — grammy bot met handlers voor text, voice, photo, commands. Alles in `handlers.ts`.
+- **`src/mcp/`** — MCP server met 8 tools (search, capture, list, stats, topics, actions, delete, update).
+- **Entry points:** `mcp-stdio.ts` (Claude Code), `mcp-http.ts` (HTTP + auth), `cli/index.ts`.
 
-## Telegram Bot
+### Search: hybrid vector + keyword
 
-- **Framework:** grammy
-- **Handlers:** aparte file per message type
-  (`text.ts`, `voice.ts`, `photo.ts`)
-- **Altijd bevestigen** na succesvolle capture
-- **Nooit stille fouten** — altijd feedback naar gebruiker bij error
-- **User ID whitelist** — alleen Thijs zijn Telegram ID mag de bot gebruiken
+SearchService combineert sqlite-vec k-NN (vector) met FTS5 MATCH (keyword) via Reciprocal Rank Fusion (k=60). Query wordt ge-embed met task_type `RETRIEVAL_QUERY`, documents met `RETRIEVAL_DOCUMENT`.
 
----
+### Duplicate detection
+
+L2 distance < 0.10 op genormaliseerde vectoren (~cosine similarity > 0.95) blokkeert capture.
+
+## Code conventions
+
+- **TypeScript strict**, geen `any` — Zod voor runtime validatie op grenzen
+- **`neverthrow` Result types** — services retourneren `Result<T, AppError>`, geen try/catch voor verwachte errors
+- **Pino logging** — `logger.info/warn/error`, nooit `console.log`
+- **ESM imports** met `.js` extensies
+- **Repository pattern** — alle SQL in repository classes in `src/repositories/`
+- **Gemini providers** — alle API calls in `src/providers/`, nooit elders
+
+## Database
+
+- SQLite met WAL mode, foreign keys aan, busy_timeout 5s
+- sqlite-vec voor 768-dim vector search (brute-force k-NN)
+- FTS5 voor keyword search
+- Migraties als genummerde `.sql` bestanden in `src/db/migrations/`
+- L2 normalisatie verplicht na Matryoshka truncatie naar 768 dims
 
 ## Testing
 
-- **Framework:** Vitest
-- **Coverage target:** 80%
-- **Mock externe services:** Gemini API en Telegram altijd mocken in tests
-- **Repository tests:** gebruik in-memory SQLite (`:memory:`)
+- Vitest, mocks voor Gemini API en Telegram
+- Repository tests gebruiken temp SQLite bestanden (niet `:memory:` vanwege sqlite-vec)
+- Mock embedding provider retourneert deterministische genormaliseerde vectoren
 
----
+## Environment
 
-## Environment variabelen
+Gevalideerd bij startup via Zod (`src/config.ts`):
 
-Altijd via `.env` file, nooit hardcoded.
-Valideer bij startup met Zod:
-
-```
-GEMINI_API_KEY=
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_ALLOWED_USER_ID=
-DB_PATH=./data/brain.db
-```
-
----
-
-## Docker
-
-Docker is vereist vanaf Fase 1 — niet optioneel.
-
-**Waarom vanaf het begin?**
-De bot moet altijd bereikbaar zijn, ook als de MacBook dicht is.
-Lokaal (Mac) en productie (Hetzner VPS) zijn identiek door Docker.
-Geen "werkt op mijn machine" problemen.
-
-**Structuur:**
-```
-Dockerfile          # multi-stage build
-docker-compose.yml  # lokaal ontwikkelen
-docker/
-  caddy/            # Caddyfile voor VPS (later)
-```
-
-**Lokaal draaien:**
-```bash
-docker compose up -d
-```
-
-**Data persistentie:**
-brain.db wordt gemount als volume — nooit in de container opslaan:
-```yaml
-volumes:
-  - ./data:/app/data
-```
-
----
-
-## Wat je NIET doet
-
-- Geen externe databases (Postgres, MongoDB, Redis)
-- Geen HTTP server voor MVP (MCP via stdio)
-- Geen frontend / dashboard voor MVP
-- Geen multi-user support
-- Geen `console.log` — gebruik Pino
-- Geen `any` in TypeScript
-- Geen SQL buiten repository classes
-
----
-
-## Bouwvolgorde (plan mode)
-
-Bouw in deze volgorde — niet vooruitlopen:
-
-1. Project scaffolding + tooling + Docker setup
-2. Database layer (connection, migraties, repositories)
-3. Gemini embedding client
-4. Capture service + search service
-5. MCP stdio server met tools
-6. Telegram bot (tekst eerst, dan voice, dan foto)
-7. Async metadata extractie
-8. Scheduler voor proactieve output
-
-Begin met stap 1. Vraag bevestiging voor je naar stap 2 gaat.
-
----
-
-## Referenties
-
-- ARCHITECTUUR.md — volledige context en beslissingen
-- [sqlite-vec docs](https://github.com/asg017/sqlite-vec)
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
-- [grammy docs](https://grammy.dev)
-- [Gemini Embeddings](https://ai.google.dev/gemini-api/docs/embeddings)
-- [neverthrow](https://github.com/supermacro/neverthrow)
+- `GEMINI_API_KEY` (required)
+- `TELEGRAM_BOT_TOKEN` (optional — bot start alleen als gezet)
+- `TELEGRAM_ALLOWED_USERS` (comma-separated Telegram user IDs)
+- `DB_PATH` (default: `./data/brain.db`)
+- `EXTRACTION_MODEL` (default: `gemini-2.5-flash`)
